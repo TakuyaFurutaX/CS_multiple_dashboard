@@ -287,31 +287,84 @@ def fetch_irbank(code):
         return {}
 
 
-@st.cache_data(ttl=86400)
-def fetch_all_history(tickers_list, period="2y"):
-    """全銘柄の株価を一括ダウンロード（APIコール1回）"""
-    try:
-        data = yf.download(tickers_list, period=period, group_by="ticker", progress=False)
-        return data
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=86400)
-def fetch_info(ticker):
-    """個別銘柄のinfo取得（リトライ付き）"""
+def _download_history(tickers_list, period="2y", start=None):
+    """yf.downloadラッパー（リトライ付き）"""
     for attempt in range(3):
         try:
-            info = yf.Ticker(ticker).info
-            return info
+            kwargs = dict(group_by="ticker", progress=False)
+            if start:
+                kwargs["start"] = start
+            else:
+                kwargs["period"] = period
+            data = yf.download(tickers_list, **kwargs)
+            return data
         except Exception:
             if attempt < 2:
                 time.sleep(3 * (attempt + 1))
-            else:
-                return None
+    return None
 
 
-def fetch_data_from_bulk(bulk_data, ticker, period="2y"):
+def fetch_all_history(tickers_list, period="2y"):
+    """永続キャッシュ + 差分フェッチ"""
+    cache_key = "hist_cache"
+    date_key = "hist_last_date"
+
+    if cache_key in st.session_state and date_key in st.session_state:
+        last_date = st.session_state[date_key]
+        today = pd.Timestamp.now().normalize()
+        if last_date >= today:
+            return st.session_state[cache_key]
+        # 差分だけ取得（最終日から）
+        delta = _download_history(tickers_list, start=last_date.strftime("%Y-%m-%d"))
+        if delta is not None and not delta.empty:
+            old = st.session_state[cache_key]
+            combined = pd.concat([old, delta])
+            combined = combined[~combined.index.duplicated(keep="last")]
+            combined.sort_index(inplace=True)
+            st.session_state[cache_key] = combined
+            st.session_state[date_key] = combined.index[-1]
+            return combined
+        return st.session_state[cache_key]
+
+    # 初回: フル取得
+    data = _download_history(tickers_list, period=period)
+    if data is not None and not data.empty:
+        st.session_state[cache_key] = data
+        st.session_state[date_key] = data.index[-1]
+    return data
+
+
+def _fetch_info_raw(ticker):
+    """個別銘柄のinfo取得（リトライ付き）"""
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).info
+        except Exception:
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
+    return None
+
+
+def fetch_info(ticker):
+    """info永続キャッシュ（1日1回更新）"""
+    info_cache_key = "info_cache"
+    info_date_key = "info_date"
+    if info_cache_key not in st.session_state:
+        st.session_state[info_cache_key] = {}
+        st.session_state[info_date_key] = {}
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    if ticker in st.session_state[info_cache_key] and st.session_state[info_date_key].get(ticker) == today:
+        return st.session_state[info_cache_key][ticker]
+
+    info = _fetch_info_raw(ticker)
+    if info:
+        st.session_state[info_cache_key][ticker] = info
+        st.session_state[info_date_key][ticker] = today
+    return info
+
+
+def fetch_data_from_bulk(bulk_data, ticker):
     """一括データから個別銘柄を抽出し、infoと合わせて返す"""
     try:
         if bulk_data is None:
@@ -335,14 +388,11 @@ def fetch_data_from_bulk(bulk_data, ticker, period="2y"):
         irbank = fetch_irbank(code)
         shares = info.get("sharesOutstanding")
 
-        # 予想EPSがあればそれを使う（日本株PERの標準）
         if irbank.get("forecast_eps"):
             info["trailingEps"] = irbank["forecast_eps"]
-        # 予想EPSもyfinanceのEPSも無い場合、純利益/株数で算出
         elif not info.get("trailingEps") and shares and shares > 0 and irbank.get("net_income"):
             info["trailingEps"] = irbank["net_income"] / shares
 
-        # BPSフォールバック
         if not info.get("bookValue") and shares and shares > 0 and irbank.get("net_assets"):
             info["bookValue"] = irbank["net_assets"] / shares
 
@@ -493,7 +543,7 @@ for i, (ticker, meta) in enumerate(active_tickers.items()):
         time.sleep(1)
     pct = 20 + int(70 * (i + 1) / total)
     progress_bar.progress(pct, text=f"Loading {meta['name']}... ({i+1}/{total})")
-    hist, info = fetch_data_from_bulk(bulk_data, ticker, period)
+    hist, info = fetch_data_from_bulk(bulk_data, ticker)
     if hist is None or info is None:
         continue
         df = compute_valuation_series(hist, info)
@@ -595,7 +645,7 @@ for i, (ticker, meta) in enumerate(active_tickers.items()):
     )
     progress_bar.progress(100, text="Complete")
     progress_bar.empty()
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="main_chart")
 
     st.markdown(
         f'<div style="color:{MCK_GREY}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
