@@ -401,18 +401,9 @@ def fetch_info(ticker):
 
     info = _fetch_info_raw(ticker)
     if info:
-        # 必要なフィールドだけ保存（個人情報・役員情報を除外）
-        safe_keys = {
-            "trailingEps", "forwardEps", "bookValue", "sharesOutstanding",
-            "marketCap", "currentPrice", "regularMarketPrice",
-            "trailingPE", "forwardPE", "revenuePerShare",
-            "enterpriseToEbitda", "shortName", "longName", "currency",
-        }
-        info_safe = {k: v for k, v in info.items() if k in safe_keys}
-        st.session_state["info_cache"][ticker] = info_safe
+        st.session_state["info_cache"][ticker] = info
         st.session_state["info_dates"][ticker] = today
         _save_info_cache({"data": st.session_state["info_cache"], "dates": st.session_state["info_dates"]})
-        return info_safe
     return info
 
 
