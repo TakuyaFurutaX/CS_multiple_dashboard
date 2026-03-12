@@ -150,21 +150,21 @@ st.markdown("""
 # McKinsey color palette per category
 # ─────────────────────────────────────────────
 TICKERS = {
-    # 米国コンサル — Blue tones
+    # 米国コンサル — Blue tones（時価総額順）
     "ACN":    {"name": "Accenture",           "category": "米国コンサル", "color": "#7BAFD4"},
     "BAH":    {"name": "Booz Allen Hamilton",  "category": "米国コンサル", "color": "#A3C4DC"},
     "FCN":    {"name": "FTI Consulting",      "category": "米国コンサル", "color": "#6B9CC4"},
+    "KFY":    {"name": "Korn Ferry",          "category": "米国コンサル", "color": "#4A7DA4"},
     "HURN":   {"name": "Huron Consulting",    "category": "米国コンサル", "color": "#8FB8D8"},
     "ICFI":   {"name": "ICF International",   "category": "米国コンサル", "color": "#5A8DB4"},
-    "KFY":    {"name": "Korn Ferry",          "category": "米国コンサル", "color": "#4A7DA4"},
-    # 日本コンサル — Teal tones
+    # 日本コンサル — Teal tones（時価総額順）
     "4307.T": {"name": "野村総研(NRI)",        "category": "日本コンサル", "color": "#4A9F8D"},
     "6532.T": {"name": "ベイカレント",         "category": "日本コンサル", "color": "#6BBFAD"},
+    "277A.T": {"name": "グロービング",         "category": "日本コンサル", "color": "#9C9485"},
     "6088.T": {"name": "シグマクシス",         "category": "日本コンサル", "color": "#8ED0C1"},
     "4310.T": {"name": "ドリームインキュベータ", "category": "日本コンサル", "color": "#5AAF9D"},
     "9168.T": {"name": "ライズコンサルティング", "category": "日本コンサル", "color": "#C4BDB0"},
-    "277A.T": {"name": "グロービング",         "category": "日本コンサル", "color": "#9C9485"},
-    # AI系 — Navy/Dark tones
+    # AI系 — Navy/Dark tones（時価総額順）
     "4259.T": {"name": "エクサウィザーズ",      "category": "AI系",       "color": "#6B8DB5"},
     "AI":     {"name": "C3.ai",               "category": "AI系",       "color": "#5A7DA5"},
 }
