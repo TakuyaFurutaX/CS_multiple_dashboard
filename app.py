@@ -340,8 +340,8 @@ def _load_info_cache():
     return {"data": {}, "dates": {}}
 
 
-def fetch_all_history(tickers_list, period="2y"):
-    """ローカルファイルから読み込み + 差分だけAPI取得"""
+def fetch_all_history(tickers_list):
+    """ローカルファイルから読み込み + 差分だけAPI取得（常に5y保持）"""
     cached = _load_history()
 
     if cached is not None and not cached.empty:
@@ -359,8 +359,8 @@ def fetch_all_history(tickers_list, period="2y"):
             return combined
         return cached
 
-    # 初回: フル取得してファイルに保存
-    data = _download_history(tickers_list, period=period)
+    # 初回: 5年分フル取得してファイルに保存
+    data = _download_history(tickers_list, period="5y")
     if data is not None and not data.empty:
         _save_history(data)
     return data
@@ -560,7 +560,12 @@ active_tickers = {
 progress_bar = st.progress(0, text="Fetching price data...")
 # 全銘柄の株価を一括ダウンロード（APIコール1回）
 all_ticker_list = list(active_tickers.keys())
-bulk_data = fetch_all_history(all_ticker_list, period)
+bulk_data = fetch_all_history(all_ticker_list)
+# 表示期間でフィルター（データは常に5y保持）
+period_days = {"1y": 365, "2y": 730, "3y": 1095, "5y": 1825}
+if bulk_data is not None:
+    cutoff = pd.Timestamp.now() - pd.Timedelta(days=period_days.get(period, 730))
+    bulk_data = bulk_data[bulk_data.index >= cutoff]
 progress_bar.progress(20, text="Fetching fundamentals...")
 
 fig = go.Figure()
