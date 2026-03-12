@@ -288,20 +288,46 @@ def fetch_irbank(code):
 
 
 @st.cache_data(ttl=86400)
-def fetch_data(ticker, period="2y"):
+def fetch_all_history(tickers_list, period="2y"):
+    """全銘柄の株価を一括ダウンロード（APIコール1回）"""
+    try:
+        data = yf.download(tickers_list, period=period, group_by="ticker", progress=False)
+        return data
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=86400)
+def fetch_info(ticker):
+    """個別銘柄のinfo取得（リトライ付き）"""
     for attempt in range(3):
         try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period=period)
-            if hist.empty:
-                return None, None
-            info = stock.info
-            break
+            info = yf.Ticker(ticker).info
+            return info
         except Exception:
             if attempt < 2:
-                time.sleep(2 * (attempt + 1))
+                time.sleep(3 * (attempt + 1))
             else:
-                return None, None
+                return None
+
+
+def fetch_data_from_bulk(bulk_data, ticker, period="2y"):
+    """一括データから個別銘柄を抽出し、infoと合わせて返す"""
+    try:
+        if bulk_data is None:
+            return None, None
+        if ticker in bulk_data.columns.get_level_values(0):
+            hist = bulk_data[ticker].dropna(how="all")
+        else:
+            hist = bulk_data.dropna(how="all")
+        if hist.empty:
+            return None, None
+    except Exception:
+        return None, None
+
+    info = fetch_info(ticker)
+    if info is None:
+        return None, None
 
     # 日本株: IRBankから予想EPSを取得（日本市場の標準PER = 予想ベース）
     if ticker.endswith(".T"):
@@ -450,6 +476,10 @@ active_tickers = {
 # Main Chart
 # ─────────────────────────────────────────────
 with st.spinner("Loading data..."):
+    # 全銘柄の株価を一括ダウンロード（APIコール1回）
+    all_ticker_list = list(active_tickers.keys())
+    bulk_data = fetch_all_history(all_ticker_list, period)
+
     fig = go.Figure()
     fig.update_layout(**MCK_LAYOUT)
     summary_rows = []
@@ -458,8 +488,8 @@ with st.spinner("Loading data..."):
 
     for i, (ticker, meta) in enumerate(active_tickers.items()):
         if i > 0:
-            time.sleep(0.5)
-        hist, info = fetch_data(ticker, period)
+            time.sleep(1)
+        hist, info = fetch_data_from_bulk(bulk_data, ticker, period)
         if hist is None or info is None:
             continue
         df = compute_valuation_series(hist, info)
