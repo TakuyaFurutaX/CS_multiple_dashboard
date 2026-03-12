@@ -503,11 +503,7 @@ period = st.sidebar.selectbox("PERIOD", ["1y", "2y", "3y", "5y"], index=1)
 show_forecast = st.sidebar.checkbox("Show forecast", value=True)
 forecast_days = st.sidebar.slider("Forecast days", 30, 180, FORECAST_DAYS)
 
-selected_categories = st.sidebar.multiselect(
-    "CATEGORIES",
-    ALL_CATEGORIES,
-    default=ALL_CATEGORIES,
-)
+selected_categories = ALL_CATEGORIES
 
 available_tickers = {
     t: m for t, m in TICKERS.items() if m["category"] in selected_categories
