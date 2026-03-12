@@ -501,27 +501,20 @@ metric_key = "pe"
 
 period = st.sidebar.selectbox("PERIOD", ["1y", "2y", "3y", "5y"], index=1)
 show_forecast = st.sidebar.checkbox("Show forecast", value=True)
-forecast_days = st.sidebar.slider("Forecast days", 30, 180, FORECAST_DAYS)
+forecast_days = st.sidebar.slider("Forecast days", 180, 360, 180)
 
 selected_categories = ALL_CATEGORIES
 
 available_tickers = {
     t: m for t, m in TICKERS.items() if m["category"] in selected_categories
 }
-all_ticker_labels = [f"{m['name']} ({t})" for t, m in available_tickers.items()]
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### EXCLUDE")
-excluded_labels = st.sidebar.multiselect(
-    "Remove from view",
-    all_ticker_labels,
-    default=[],
-)
 excluded_tickers = set()
-for label in excluded_labels:
-    for t, m in available_tickers.items():
-        if f"{m['name']} ({t})" == label:
-            excluded_tickers.add(t)
+for t, m in available_tickers.items():
+    if st.sidebar.checkbox(m["name"], value=True, key=f"chk_{t}") is False:
+        excluded_tickers.add(t)
 
 active_tickers = {
     t: m for t, m in available_tickers.items() if t not in excluded_tickers
