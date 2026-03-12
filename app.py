@@ -663,7 +663,7 @@ progress_bar.empty()
 st.plotly_chart(fig, use_container_width=True, key="main_chart")
 
 st.markdown(
-    f'<div style="color:{MCK_GREY}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
+    f'<div style="color:{MCK_TEXT}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
     f'* Analysis period: {period} &ensp;|&ensp;'
     f'Trend line: OLS linear regression over full period &ensp;|&ensp;'
     f'Forecast band: ±2σ (daily return vol × √t), expanding cone from last data point'
