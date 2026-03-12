@@ -477,8 +477,8 @@ def forecast_bb(series, days=FORECAST_DAYS):
 
     t = np.arange(0, days + 1)
     future_center = last_val + slope * t
-    # t=0で幅0、√tで広がる（日次σ × √t × 2 × 現在値）
-    band = 2 * daily_sigma * last_val * np.sqrt(t)
+    # t=0で幅0、√tで広がる（日次σ × √t × 1.5 × 現在値）
+    band = 1.5 * daily_sigma * last_val * np.sqrt(t)
     future_upper = future_center + band
     future_lower = future_center - band
 
