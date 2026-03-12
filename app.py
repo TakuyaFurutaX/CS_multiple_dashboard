@@ -76,9 +76,6 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #ECF0F1 !important;
     }
-    [data-testid="stSidebar"] [data-baseweb="select"] * {
-        color: #051C2C !important;
-    }
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stMultiSelect label,
     [data-testid="stSidebar"] .stCheckbox label,
