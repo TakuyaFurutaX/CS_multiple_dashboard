@@ -287,6 +287,18 @@ def fetch_irbank(code):
         return {}
 
 
+import json
+import os
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+HIST_FILE = os.path.join(DATA_DIR, "history.parquet")
+INFO_FILE = os.path.join(DATA_DIR, "info.json")
+
+
+def _ensure_data_dir():
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+
 def _download_history(tickers_list, period="2y", start=None):
     """yf.downloadラッパー（リトライ付き）"""
     for attempt in range(3):
@@ -304,33 +316,53 @@ def _download_history(tickers_list, period="2y", start=None):
     return None
 
 
-def fetch_all_history(tickers_list, period="2y"):
-    """永続キャッシュ + 差分フェッチ"""
-    cache_key = "hist_cache"
-    date_key = "hist_last_date"
+def _save_history(data):
+    _ensure_data_dir()
+    data.to_parquet(HIST_FILE)
 
-    if cache_key in st.session_state and date_key in st.session_state:
-        last_date = st.session_state[date_key]
+
+def _load_history():
+    if os.path.exists(HIST_FILE):
+        return pd.read_parquet(HIST_FILE)
+    return None
+
+
+def _save_info_cache(info_dict):
+    _ensure_data_dir()
+    with open(INFO_FILE, "w") as f:
+        json.dump(info_dict, f, ensure_ascii=False, default=str)
+
+
+def _load_info_cache():
+    if os.path.exists(INFO_FILE):
+        with open(INFO_FILE, "r") as f:
+            return json.load(f)
+    return {"data": {}, "dates": {}}
+
+
+def fetch_all_history(tickers_list, period="2y"):
+    """ローカルファイルから読み込み + 差分だけAPI取得"""
+    cached = _load_history()
+
+    if cached is not None and not cached.empty:
+        last_date = cached.index[-1]
         today = pd.Timestamp.now().normalize()
         if last_date >= today:
-            return st.session_state[cache_key]
-        # 差分だけ取得（最終日から）
+            return cached
+        # 差分だけ取得
         delta = _download_history(tickers_list, start=last_date.strftime("%Y-%m-%d"))
         if delta is not None and not delta.empty:
-            old = st.session_state[cache_key]
-            combined = pd.concat([old, delta])
+            combined = pd.concat([cached, delta])
             combined = combined[~combined.index.duplicated(keep="last")]
             combined.sort_index(inplace=True)
-            st.session_state[cache_key] = combined
-            st.session_state[date_key] = combined.index[-1]
+            _save_history(combined)
             return combined
-        return st.session_state[cache_key]
+        return cached
 
-    # 初回: フル取得
+    # 初回: フル取得してファイルに保存
     data = _download_history(tickers_list, period=period)
     if data is not None and not data.empty:
-        st.session_state[cache_key] = data
-        st.session_state[date_key] = data.index[-1]
+        _save_history(data)
     return data
 
 
@@ -346,21 +378,21 @@ def _fetch_info_raw(ticker):
 
 
 def fetch_info(ticker):
-    """info永続キャッシュ（1日1回更新）"""
-    info_cache_key = "info_cache"
-    info_date_key = "info_date"
-    if info_cache_key not in st.session_state:
-        st.session_state[info_cache_key] = {}
-        st.session_state[info_date_key] = {}
+    """infoローカルキャッシュ（1日1回更新）"""
+    if "info_cache" not in st.session_state:
+        loaded = _load_info_cache()
+        st.session_state["info_cache"] = loaded.get("data", {})
+        st.session_state["info_dates"] = loaded.get("dates", {})
 
     today = datetime.now().strftime("%Y-%m-%d")
-    if ticker in st.session_state[info_cache_key] and st.session_state[info_date_key].get(ticker) == today:
-        return st.session_state[info_cache_key][ticker]
+    if ticker in st.session_state["info_cache"] and st.session_state["info_dates"].get(ticker) == today:
+        return st.session_state["info_cache"][ticker]
 
     info = _fetch_info_raw(ticker)
     if info:
-        st.session_state[info_cache_key][ticker] = info
-        st.session_state[info_date_key][ticker] = today
+        st.session_state["info_cache"][ticker] = info
+        st.session_state["info_dates"][ticker] = today
+        _save_info_cache({"data": st.session_state["info_cache"], "dates": st.session_state["info_dates"]})
     return info
 
 
