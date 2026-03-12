@@ -452,32 +452,6 @@ def compute_valuation_series(hist, info):
     else:
         df["pe"] = np.nan
 
-    revenue_per_share = info.get("revenuePerShare")
-    if revenue_per_share and revenue_per_share > 0:
-        df["ps"] = df["price"] / revenue_per_share
-    else:
-        df["ps"] = np.nan
-
-    ev_ebitda = info.get("enterpriseToEbitda")
-    current_pe = info.get("trailingPE")
-    if ev_ebitda and current_pe and current_pe > 0:
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-        if current_price and current_price > 0:
-            df["ev_ebitda"] = ev_ebitda * (df["price"] / current_price)
-        else:
-            df["ev_ebitda"] = np.nan
-    else:
-        df["ev_ebitda"] = np.nan
-
-    # 株価指数（初日=100に正規化）
-    df["price_index"] = df["price"] / df["price"].iloc[0] * 100
-
-    book_value = info.get("bookValue")
-    if book_value and book_value > 0:
-        df["pbr"] = df["price"] / book_value
-    else:
-        df["pbr"] = np.nan
-
     return df
 
 
@@ -522,16 +496,8 @@ st.caption(f"Global & Japan consulting sector  |  AI disruption tracking  |  {da
 
 # Sidebar
 st.sidebar.markdown("### PARAMETERS")
-metric_choice = st.sidebar.selectbox(
-    "VALUATION METRIC",
-    ["P/E (株価収益率)", "P/S (株価売上高倍率)", "EV/EBITDA", "株価指数 (基準日=100)"],
-)
-metric_key = {
-    "P/E (株価収益率)": "pe",
-    "P/S (株価売上高倍率)": "ps",
-    "EV/EBITDA": "ev_ebitda",
-    "株価指数 (基準日=100)": "price_index",
-}[metric_choice]
+metric_choice = "PER (株価収益率)"
+metric_key = "pe"
 
 period = st.sidebar.selectbox("PERIOD", ["1y", "2y", "3y", "5y"], index=1)
 show_forecast = st.sidebar.checkbox("Show forecast", value=True)
