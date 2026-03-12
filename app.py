@@ -377,13 +377,24 @@ def _fetch_info_raw(ticker):
     return None
 
 
-def fetch_info(ticker):
-    """infoローカルキャッシュ（1日1回更新）"""
+def _init_info_cache():
+    """info.jsonを一度だけ読み込む"""
     if "info_cache" not in st.session_state:
         loaded = _load_info_cache()
         st.session_state["info_cache"] = loaded.get("data", {})
         st.session_state["info_dates"] = loaded.get("dates", {})
 
+
+def info_needs_fetch(ticker):
+    """このtickerのinfoをAPI取得する必要があるか"""
+    _init_info_cache()
+    today = datetime.now().strftime("%Y-%m-%d")
+    return not (ticker in st.session_state["info_cache"] and st.session_state["info_dates"].get(ticker) == today)
+
+
+def fetch_info(ticker):
+    """infoローカルキャッシュ（1日1回更新）"""
+    _init_info_cache()
     today = datetime.now().strftime("%Y-%m-%d")
     if ticker in st.session_state["info_cache"] and st.session_state["info_dates"].get(ticker) == today:
         return st.session_state["info_cache"][ticker]
@@ -575,12 +586,19 @@ alerts = []
 category_series = {cat: [] for cat in ALL_CATEGORIES}
 total = len(active_tickers)
 
+_init_info_cache()
+api_needed = any(info_needs_fetch(t) for t in active_tickers)
+fetch_count = 0
+
 for i, (ticker, meta) in enumerate(active_tickers.items()):
-    if i > 0:
+    if api_needed and info_needs_fetch(ticker) and fetch_count > 0:
         time.sleep(1)
     pct = 20 + int(70 * (i + 1) / total)
     progress_bar.progress(pct, text=f"Loading {meta['name']}... ({i+1}/{total})")
+    needs_api = info_needs_fetch(ticker)
     hist, info = fetch_data_from_bulk(bulk_data, ticker)
+    if needs_api:
+        fetch_count += 1
     if hist is None or info is None:
         continue
     df = compute_valuation_series(hist, info)
