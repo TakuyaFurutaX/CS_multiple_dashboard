@@ -467,9 +467,9 @@ def forecast_bb(series, days=FORECAST_DAYS):
     model = LinearRegression().fit(X, y)
     slope = model.coef_[0]
 
-    # 日次リターンのσ（全期間）
-    daily_returns = clean.pct_change().dropna()
-    daily_sigma = daily_returns.std()
+    # 平均からの乖離率のσ（PERの実績的なブレ幅）
+    mean_val = clean.mean()
+    log_deviation_sigma = np.log(clean / mean_val).std()
 
     # 生値の最終点から開始（チャートの平均線と接続）
     last_val = clean.iloc[-1]
@@ -477,9 +477,10 @@ def forecast_bb(series, days=FORECAST_DAYS):
 
     t = np.arange(0, days + 1)
     future_center = last_val + slope * t
-    # 対数正規バンド: ±2σ√t（下限は0に漸近、上限は指数的に広がる）
-    future_upper = future_center * np.exp(2 * daily_sigma * np.sqrt(t))
-    future_lower = future_center * np.exp(-2 * daily_sigma * np.sqrt(t))
+    # 対数バンド: 平均からの乖離率ベース（上下とも現実的な範囲に収まる）
+    scale = np.minimum(np.sqrt(t / len(clean)), 1.0)
+    future_upper = future_center * np.exp(2 * log_deviation_sigma * scale)
+    future_lower = future_center * np.exp(-2 * log_deviation_sigma * scale)
 
     future_dates = clean.index[-1:].append(
         pd.bdate_range(start=last_date + timedelta(days=1), periods=days)
