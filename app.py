@@ -287,7 +287,7 @@ def fetch_irbank(code):
         return {}
 
 
-@st.cache_data(ttl=21600)
+@st.cache_data(ttl=86400)
 def fetch_data(ticker, period="2y"):
     for attempt in range(3):
         try:
