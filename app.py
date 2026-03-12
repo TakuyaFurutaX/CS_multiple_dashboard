@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from sklearn.linear_model import LinearRegression
 import requests
 from bs4 import BeautifulSoup
+import time
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -286,13 +287,21 @@ def fetch_irbank(code):
         return {}
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def fetch_data(ticker, period="2y"):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period=period)
-    if hist.empty:
-        return None, None
-    info = stock.info
+    for attempt in range(3):
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period=period)
+            if hist.empty:
+                return None, None
+            info = stock.info
+            break
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return None, None
 
     # 日本株: IRBankから予想EPSを取得（日本市場の標準PER = 予想ベース）
     if ticker.endswith(".T"):
@@ -447,7 +456,9 @@ with st.spinner("Loading data..."):
     alerts = []
     category_series = {cat: [] for cat in ALL_CATEGORIES}
 
-    for ticker, meta in active_tickers.items():
+    for i, (ticker, meta) in enumerate(active_tickers.items()):
+        if i > 0:
+            time.sleep(0.5)
         hist, info = fetch_data(ticker, period)
         if hist is None or info is None:
             continue
