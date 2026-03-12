@@ -477,10 +477,9 @@ def forecast_bb(series, days=FORECAST_DAYS):
 
     t = np.arange(0, days + 1)
     future_center = last_val + slope * t
-    # t=0で幅0、√tで広がる（日次σ × √t × 1.5 × 現在値）
-    band = 1.5 * daily_sigma * last_val * np.sqrt(t)
-    future_upper = future_center + band
-    future_lower = future_center - band
+    # 対数正規バンド: ±2σ√t（下限は0に漸近、上限は指数的に広がる）
+    future_upper = future_center * np.exp(2 * daily_sigma * np.sqrt(t))
+    future_lower = future_center * np.exp(-2 * daily_sigma * np.sqrt(t))
 
     future_dates = clean.index[-1:].append(
         pd.bdate_range(start=last_date + timedelta(days=1), periods=days)
