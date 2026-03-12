@@ -578,113 +578,113 @@ for i, (ticker, meta) in enumerate(active_tickers.items()):
     hist, info = fetch_data_from_bulk(bulk_data, ticker)
     if hist is None or info is None:
         continue
-        df = compute_valuation_series(hist, info)
-        series = df[metric_key].dropna()
-        if series.empty:
-            continue
+    df = compute_valuation_series(hist, info)
+    series = df[metric_key].dropna()
+    if series.empty:
+        continue
 
-        cat = meta["category"]
-        category_series[cat].append(series)
+    cat = meta["category"]
+    category_series[cat].append(series)
 
-        # Individual — thin, muted
-        fig.add_trace(go.Scatter(
-            x=series.index, y=series.values,
-            mode="lines",
-            name=meta["name"],
-            line=dict(color=meta["color"], width=1.2),
-            opacity=0.35,
-            legendgroup=cat,
-            legendgrouptitle_text=cat,
-            hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
-        ))
+    # Individual — thin, muted
+    fig.add_trace(go.Scatter(
+        x=series.index, y=series.values,
+        mode="lines",
+        name=meta["name"],
+        line=dict(color=meta["color"], width=1.2),
+        opacity=0.35,
+        legendgroup=cat,
+        legendgrouptitle_text=cat,
+        hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+    ))
 
-        current_val = series.iloc[-1]
-        max_val = series.max()
-        min_val = series.min()
-        pct_from_peak = ((current_val - max_val) / max_val) * 100
+    current_val = series.iloc[-1]
+    max_val = series.max()
+    min_val = series.min()
+    pct_from_peak = ((current_val - max_val) / max_val) * 100
 
-        summary_rows.append({
-            "銘柄": meta["name"],
-            "Ticker": ticker,
-            "カテゴリ": cat,
-            f"Current {metric_choice}": round(current_val, 2),
-            "Period High": round(max_val, 2),
-            "Period Low": round(min_val, 2),
-            "% from Peak": round(pct_from_peak, 1),
-        })
+    summary_rows.append({
+        "銘柄": meta["name"],
+        "Ticker": ticker,
+        "カテゴリ": cat,
+        f"Current {metric_choice}": round(current_val, 2),
+        "Period High": round(max_val, 2),
+        "Period Low": round(min_val, 2),
+        "% from Peak": round(pct_from_peak, 1),
+    })
 
-        if pct_from_peak > -10:
-            alerts.append((meta["name"], pct_from_peak))
+    if pct_from_peak > -10:
+        alerts.append((meta["name"], pct_from_peak))
 
-    # Category averages — bold, prominent
-    for cat in ALL_CATEGORIES:
-        if cat not in selected_categories or not category_series[cat]:
-            continue
+# Category averages — bold, prominent
+for cat in ALL_CATEGORIES:
+    if cat not in selected_categories or not category_series[cat]:
+        continue
 
-        avg_color = CATEGORY_AVG_COLORS[cat]
-        combined = pd.concat(category_series[cat], axis=1)
-        cat_mean = combined.mean(axis=1).dropna()
-        if cat_mean.empty:
-            continue
+    avg_color = CATEGORY_AVG_COLORS[cat]
+    combined = pd.concat(category_series[cat], axis=1)
+    cat_mean = combined.mean(axis=1).dropna()
+    if cat_mean.empty:
+        continue
 
-        fill_color = f"rgba({int(avg_color[1:3],16)},{int(avg_color[3:5],16)},{int(avg_color[5:7],16)},0.12)"
+    fill_color = f"rgba({int(avg_color[1:3],16)},{int(avg_color[3:5],16)},{int(avg_color[5:7],16)},0.12)"
 
-        # カテゴリ平均線（太線）
-        fig.add_trace(go.Scatter(
-            x=cat_mean.index, y=cat_mean.values,
-            mode="lines",
-            name=f"Avg: {cat}",
-            line=dict(color=avg_color, width=3.5),
-            opacity=1.0,
-            legendgroup=cat,
-            hovertemplate=f"Avg: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
-        ))
+    # カテゴリ平均線（太線）
+    fig.add_trace(go.Scatter(
+        x=cat_mean.index, y=cat_mean.values,
+        mode="lines",
+        name=f"Avg: {cat}",
+        line=dict(color=avg_color, width=3.5),
+        opacity=1.0,
+        legendgroup=cat,
+        hovertemplate=f"Avg: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+    ))
 
-        # 予測延長（ボリンジャーバンド）
-        if show_forecast:
-            fdates, f_sma, f_upper, f_lower = forecast_bb(cat_mean, forecast_days)
-            if fdates is not None:
-                fig.add_trace(go.Scatter(
-                    x=fdates, y=f_upper,
-                    mode="lines", line=dict(width=0),
-                    legendgroup=cat, showlegend=False, hoverinfo="skip",
-                ))
-                fig.add_trace(go.Scatter(
-                    x=fdates, y=f_lower,
-                    mode="lines", line=dict(width=0),
-                    fill="tonexty", fillcolor=fill_color,
-                    legendgroup=cat, showlegend=False, hoverinfo="skip",
-                ))
-                fig.add_trace(go.Scatter(
-                    x=fdates, y=f_sma,
-                    mode="lines",
-                    name=f"Forecast: {cat}",
-                    line=dict(color=avg_color, width=2.5, dash="dot"),
-                    opacity=0.8,
-                    legendgroup=cat, showlegend=False,
-                    hovertemplate=f"Forecast: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
-                ))
+    # 予測延長（ボリンジャーバンド）
+    if show_forecast:
+        fdates, f_sma, f_upper, f_lower = forecast_bb(cat_mean, forecast_days)
+        if fdates is not None:
+            fig.add_trace(go.Scatter(
+                x=fdates, y=f_upper,
+                mode="lines", line=dict(width=0),
+                legendgroup=cat, showlegend=False, hoverinfo="skip",
+            ))
+            fig.add_trace(go.Scatter(
+                x=fdates, y=f_lower,
+                mode="lines", line=dict(width=0),
+                fill="tonexty", fillcolor=fill_color,
+                legendgroup=cat, showlegend=False, hoverinfo="skip",
+            ))
+            fig.add_trace(go.Scatter(
+                x=fdates, y=f_sma,
+                mode="lines",
+                name=f"Forecast: {cat}",
+                line=dict(color=avg_color, width=2.5, dash="dot"),
+                opacity=0.8,
+                legendgroup=cat, showlegend=False,
+                hovertemplate=f"Forecast: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+            ))
 
-    fig.update_layout(
-        height=620,
-        title=dict(text=f"{metric_choice}  —  Daily trend with category averages"),
-        yaxis=dict(autorange=True, fixedrange=False, side="left"),
-        legend=dict(
-            orientation="v", y=1, x=1.02,
-            groupclick="togglegroup",
-        ),
-        hovermode="x unified",
-    )
-    progress_bar.progress(100, text="Complete")
-    progress_bar.empty()
-    st.plotly_chart(fig, use_container_width=True, key="main_chart")
+fig.update_layout(
+    height=620,
+    title=dict(text=f"{metric_choice}  —  Daily trend with category averages"),
+    yaxis=dict(autorange=True, fixedrange=False, side="left"),
+    legend=dict(
+        orientation="v", y=1, x=1.02,
+        groupclick="togglegroup",
+    ),
+    hovermode="x unified",
+)
+progress_bar.progress(100, text="Complete")
+progress_bar.empty()
+st.plotly_chart(fig, use_container_width=True, key="main_chart")
 
-    st.markdown(
-        f'<div style="color:{MCK_GREY}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
-        f'* Analysis period: {period} &ensp;|&ensp;'
-        f'Trend line: OLS linear regression over full period &ensp;|&ensp;'
-        f'Forecast band: ±2σ (daily return vol × √t), expanding cone from last data point'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    f'<div style="color:{MCK_GREY}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
+    f'* Analysis period: {period} &ensp;|&ensp;'
+    f'Trend line: OLS linear regression over full period &ensp;|&ensp;'
+    f'Forecast band: ±2σ (daily return vol × √t), expanding cone from last data point'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
