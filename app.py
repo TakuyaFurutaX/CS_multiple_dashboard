@@ -562,52 +562,22 @@ for i, (ticker, meta) in enumerate(active_tickers.items()):
         continue
 
     cat = meta["category"]
-    category_series[cat].append(series)
+    category_series[cat].append((series, ticker, meta))
 
-    # Individual — thin, muted
-    fig.add_trace(go.Scatter(
-        x=series.index, y=series.values,
-        mode="lines",
-        name=meta["name"],
-        line=dict(color=meta["color"], width=1.2),
-        opacity=0.35,
-        legendgroup=cat,
-        legendgrouptitle_text=cat,
-        hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
-    ))
-
-    current_val = series.iloc[-1]
-    max_val = series.max()
-    min_val = series.min()
-    pct_from_peak = ((current_val - max_val) / max_val) * 100
-
-    summary_rows.append({
-        "銘柄": meta["name"],
-        "Ticker": ticker,
-        "カテゴリ": cat,
-        f"Current {metric_choice}": round(current_val, 2),
-        "Period High": round(max_val, 2),
-        "Period Low": round(min_val, 2),
-        "% from Peak": round(pct_from_peak, 1),
-    })
-
-    if pct_from_peak > -10:
-        alerts.append((meta["name"], pct_from_peak))
-
-# Category averages — bold, prominent
+# --- Avg線を先に追加（凡例の先頭に表示） ---
 for cat in ALL_CATEGORIES:
     if cat not in selected_categories or not category_series[cat]:
         continue
 
     avg_color = CATEGORY_AVG_COLORS[cat]
-    combined = pd.concat(category_series[cat], axis=1)
+    series_list = [s for s, _, _ in category_series[cat]]
+    combined = pd.concat(series_list, axis=1)
     cat_mean = combined.mean(axis=1).dropna()
     if cat_mean.empty:
         continue
 
     fill_color = f"rgba({int(avg_color[1:3],16)},{int(avg_color[3:5],16)},{int(avg_color[5:7],16)},0.12)"
 
-    # カテゴリ平均線（太線）
     fig.add_trace(go.Scatter(
         x=cat_mean.index, y=cat_mean.values,
         mode="lines",
@@ -615,10 +585,10 @@ for cat in ALL_CATEGORIES:
         line=dict(color=avg_color, width=3.5),
         opacity=1.0,
         legendgroup=cat,
+        legendgrouptitle_text=cat,
         hovertemplate=f"Avg: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
     ))
 
-    # 予測延長（ボリンジャーバンド）
     if show_forecast:
         fdates, f_sma, f_upper, f_lower = forecast_bb(cat_mean, forecast_days)
         if fdates is not None:
@@ -642,6 +612,39 @@ for cat in ALL_CATEGORIES:
                 legendgroup=cat, showlegend=False,
                 hovertemplate=f"Forecast: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
             ))
+
+# --- 個別銘柄を後に追加 ---
+for cat in ALL_CATEGORIES:
+    if cat not in selected_categories or not category_series[cat]:
+        continue
+    for series, ticker, meta in category_series[cat]:
+        fig.add_trace(go.Scatter(
+            x=series.index, y=series.values,
+            mode="lines",
+            name=meta["name"],
+            line=dict(color=meta["color"], width=1.2),
+            opacity=0.35,
+            legendgroup=cat,
+            hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+        ))
+
+        current_val = series.iloc[-1]
+        max_val = series.max()
+        min_val = series.min()
+        pct_from_peak = ((current_val - max_val) / max_val) * 100
+
+        summary_rows.append({
+            "銘柄": meta["name"],
+            "Ticker": ticker,
+            "カテゴリ": cat,
+            f"Current {metric_choice}": round(current_val, 2),
+            "Period High": round(max_val, 2),
+            "Period Low": round(min_val, 2),
+            "% from Peak": round(pct_from_peak, 1),
+        })
+
+        if pct_from_peak > -10:
+            alerts.append((meta["name"], pct_from_peak))
 
 fig.update_layout(
     height=620,
