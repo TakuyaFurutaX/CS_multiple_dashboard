@@ -475,23 +475,27 @@ active_tickers = {
 # ─────────────────────────────────────────────
 # Main Chart
 # ─────────────────────────────────────────────
-with st.spinner("Loading data..."):
-    # 全銘柄の株価を一括ダウンロード（APIコール1回）
-    all_ticker_list = list(active_tickers.keys())
-    bulk_data = fetch_all_history(all_ticker_list, period)
+progress_bar = st.progress(0, text="Fetching price data...")
+# 全銘柄の株価を一括ダウンロード（APIコール1回）
+all_ticker_list = list(active_tickers.keys())
+bulk_data = fetch_all_history(all_ticker_list, period)
+progress_bar.progress(20, text="Fetching fundamentals...")
 
-    fig = go.Figure()
-    fig.update_layout(**MCK_LAYOUT)
-    summary_rows = []
-    alerts = []
-    category_series = {cat: [] for cat in ALL_CATEGORIES}
+fig = go.Figure()
+fig.update_layout(**MCK_LAYOUT)
+summary_rows = []
+alerts = []
+category_series = {cat: [] for cat in ALL_CATEGORIES}
+total = len(active_tickers)
 
-    for i, (ticker, meta) in enumerate(active_tickers.items()):
-        if i > 0:
-            time.sleep(1)
-        hist, info = fetch_data_from_bulk(bulk_data, ticker, period)
-        if hist is None or info is None:
-            continue
+for i, (ticker, meta) in enumerate(active_tickers.items()):
+    if i > 0:
+        time.sleep(1)
+    pct = 20 + int(70 * (i + 1) / total)
+    progress_bar.progress(pct, text=f"Loading {meta['name']}... ({i+1}/{total})")
+    hist, info = fetch_data_from_bulk(bulk_data, ticker, period)
+    if hist is None or info is None:
+        continue
         df = compute_valuation_series(hist, info)
         series = df[metric_key].dropna()
         if series.empty:
@@ -589,6 +593,8 @@ with st.spinner("Loading data..."):
         ),
         hovermode="x unified",
     )
+    progress_bar.progress(100, text="Complete")
+    progress_bar.empty()
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(
