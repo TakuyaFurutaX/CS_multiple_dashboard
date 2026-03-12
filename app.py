@@ -650,6 +650,7 @@ fig.update_layout(
     legend=dict(
         orientation="v", y=1, x=1.02,
         groupclick="togglegroup",
+        traceorder="grouped",
     ),
     hovermode="x unified",
 )
