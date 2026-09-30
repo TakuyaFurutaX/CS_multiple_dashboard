@@ -1,14 +1,14 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from sklearn.linear_model import LinearRegression
-import requests
-from bs4 import BeautifulSoup
-import time
 import warnings
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+import core
+from core import ALL_CATEGORIES, TICKERS
+
 warnings.filterwarnings("ignore")
 
 # ─────────────────────────────────────────────
@@ -139,6 +139,31 @@ st.markdown("""
         border-color: #ECF0F1 !important;
     }
 
+    /* Sidebar inputs: 背景と文字色を両方固定（ライト/ダークテーマどちらでも読める） */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] .stSelectbox [role="group"] {
+        background-color: #0E3246 !important;
+        border-color: #2A5670 !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] *,
+    [data-testid="stSidebar"] .stSelectbox [role="group"] * {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] .stButton button {
+        background-color: #0E3246 !important;
+        border: 1px solid #2A5670 !important;
+    }
+    [data-testid="stSidebar"] .stButton button:hover {
+        border-color: #2251FF !important;
+    }
+
+    /* Sidebar expanders */
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        border-color: #1B3A4B !important;
+        background-color: transparent !important;
+    }
+
     /* Spinner */
     .stSpinner > div {
         border-top-color: #2251FF !important;
@@ -147,36 +172,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# McKinsey color palette per category
+# Color palette per category（平均線 + 個別銘柄の濃淡）
 # ─────────────────────────────────────────────
-TICKERS = {
-    # 米国コンサル — Blue tones（時価総額順）
-    "ACN":    {"name": "Accenture",           "category": "米国コンサル", "color": "#7BAFD4"},
-    "BAH":    {"name": "Booz Allen Hamilton",  "category": "米国コンサル", "color": "#A3C4DC"},
-    "FCN":    {"name": "FTI Consulting",      "category": "米国コンサル", "color": "#6B9CC4"},
-    "KFY":    {"name": "Korn Ferry",          "category": "米国コンサル", "color": "#4A7DA4"},
-    "HURN":   {"name": "Huron Consulting",    "category": "米国コンサル", "color": "#8FB8D8"},
-    "ICFI":   {"name": "ICF International",   "category": "米国コンサル", "color": "#5A8DB4"},
-    # 日本コンサル — Teal tones（時価総額順）
-    "4307.T": {"name": "野村総研(NRI)",        "category": "日本コンサル", "color": "#4A9F8D"},
-    "6532.T": {"name": "ベイカレント",         "category": "日本コンサル", "color": "#6BBFAD"},
-    "277A.T": {"name": "グロービング",         "category": "日本コンサル", "color": "#9C9485"},
-    "6088.T": {"name": "シグマクシス",         "category": "日本コンサル", "color": "#8ED0C1"},
-    "4310.T": {"name": "ドリームインキュベータ", "category": "日本コンサル", "color": "#5AAF9D"},
-    "9168.T": {"name": "ライズコンサルティング", "category": "日本コンサル", "color": "#C4BDB0"},
-    # AI系 — Navy/Dark tones（時価総額順）
-    "4259.T": {"name": "エクサウィザーズ",      "category": "AI系",       "color": "#6B8DB5"},
-    "AI":     {"name": "C3.ai",               "category": "AI系",       "color": "#5A7DA5"},
-}
-
 CATEGORY_AVG_COLORS = {
-    "米国コンサル": MCK_BLUE,
-    "日本コンサル": MCK_TEAL,
-    "AI系":       MCK_NAVY,
+    "米国コンサル":         MCK_BLUE,
+    "グローバルITサービス": "#6A3FB5",
+    "日本コンサル":         MCK_TEAL,
+    "AI系":               MCK_NAVY,
 }
-
-ALL_CATEGORIES = ["米国コンサル", "日本コンサル", "AI系"]
-FORECAST_DAYS = 90
+CATEGORY_SHADES = {
+    "米国コンサル":         ["#7BAFD4", "#A3C4DC", "#6B9CC4", "#4A7DA4", "#8FB8D8", "#5A8DB4", "#3D6FA0", "#9DBFE0", "#2F5F8F"],
+    "グローバルITサービス": ["#9C8BCB", "#8570B8", "#B3A6DB", "#7A62AE", "#A89AD2", "#6F55A3", "#C4B9E3"],
+    "日本コンサル":         ["#4A9F8D", "#6BBFAD", "#9C9485", "#8ED0C1", "#5AAF9D", "#C4BDB0", "#3B8A7A",
+                            "#7FB8A8", "#B7A98F", "#A6CFC4", "#8C8575", "#2E7F6E", "#D4CDBF"],
+    "AI系":               ["#6B8DB5", "#5A7DA5", "#4A6D95", "#8FA8C8", "#3A5D85", "#A3B8D4", "#7C98BC"],
+}
 
 # ─────────────────────────────────────────────
 # Plotly template — McKinsey style
@@ -216,441 +226,192 @@ MCK_LAYOUT = dict(
     margin=dict(l=50, r=20, t=50, b=40),
 )
 
+PERIOD_DAYS = {"1y": 365, "2y": 730, "3y": 1095, "5y": 1825}
+
+
+def _rgba(hex_color, alpha):
+    return f"rgba({int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)},{alpha})"
+
+
 # ─────────────────────────────────────────────
-# Data
+# Data（キャッシュ読込 → 古い部分だけAPI更新）
 # ─────────────────────────────────────────────
-def _parse_irbank_value(s):
-    """IRBankの日本語単位付き数値をパース"""
-    s = s.replace(",", "").replace("+", "").replace("%", "").strip()
-    if s == "-" or s == "":
-        return None
-    if "億" in s:
-        return float(s.replace("億", "")) * 1e8
-    elif "百万" in s:
-        return float(s.replace("百万", "")) * 1e6
-    elif "千" in s:
-        return float(s.replace("千", "")) * 1e3
-    return float(s)
-
-
-@st.cache_data(ttl=86400)
-def fetch_irbank(code):
-    """IRBankから予想EPS・純資産を取得"""
+@st.cache_data(ttl=6 * 3600, show_spinner="Updating market data...")
+def load_data():
+    tickers = list(TICKERS)
+    warnings_ = []
     try:
-        url = f"https://irbank.net/{code}/results"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        tables = soup.find_all("table")
-
-        forecast_eps, net_income, net_assets = None, None, None
-
-        # Table 0: 業績 → ヘッダーからEPS列を特定し予想EPSを取得
-        if len(tables) > 0:
-            rows = tables[0].find_all("tr")
-            header = [c.get_text(strip=True) for c in rows[0].find_all(["th", "td"])]
-            eps_idx = None
-            for i, h in enumerate(header):
-                if h == "EPS":
-                    eps_idx = i
-                    break
-
-            for row in reversed(rows[1:]):
-                cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
-                # 予想行からEPS取得
-                if "予" in cells[0] and eps_idx and len(cells) > eps_idx:
-                    try:
-                        forecast_eps = float(cells[eps_idx].replace(",", ""))
-                    except (ValueError, TypeError):
-                        pass
-                    break
-
-            # 実績の純利益（フォールバック用）
-            for row in reversed(rows[1:]):
-                cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
-                if "予" not in cells[0] and len(cells) > 4:
-                    val = _parse_irbank_value(cells[4])
-                    if val is not None:
-                        net_income = val
-                        break
-
-        # Table 1: 財務 → 純資産(col 2)
-        if len(tables) > 1:
-            for row in reversed(tables[1].find_all("tr")[1:]):
-                cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
-                if len(cells) > 2:
-                    val = _parse_irbank_value(cells[2])
-                    if val is not None:
-                        net_assets = val
-                        break
-        return {"forecast_eps": forecast_eps, "net_income": net_income, "net_assets": net_assets}
-    except Exception:
-        return {}
-
-
-import json
-import os
-
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-HIST_FILE = os.path.join(DATA_DIR, "history.parquet")
-INFO_FILE = os.path.join(DATA_DIR, "info.json")
-
-
-def _ensure_data_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-
-def _download_history(tickers_list, period="2y", start=None):
-    """yf.downloadラッパー（リトライ付き）"""
-    for attempt in range(3):
-        try:
-            kwargs = dict(group_by="ticker", progress=False)
-            if start:
-                kwargs["start"] = start
-            else:
-                kwargs["period"] = period
-            data = yf.download(tickers_list, **kwargs)
-            return data
-        except Exception:
-            if attempt < 2:
-                time.sleep(3 * (attempt + 1))
-    return None
-
-
-def _save_history(data):
-    _ensure_data_dir()
-    data.to_parquet(HIST_FILE)
-
-
-def _load_history():
-    if os.path.exists(HIST_FILE):
-        return pd.read_parquet(HIST_FILE)
-    return None
-
-
-def _save_info_cache(info_dict):
-    _ensure_data_dir()
-    with open(INFO_FILE, "w") as f:
-        json.dump(info_dict, f, ensure_ascii=False, default=str)
-
-
-def _load_info_cache():
-    if os.path.exists(INFO_FILE):
-        with open(INFO_FILE, "r") as f:
-            return json.load(f)
-    return {"data": {}, "dates": {}}
-
-
-def fetch_all_history(tickers_list):
-    """ローカルファイルから読み込み + 差分だけAPI取得（常に5y保持）"""
-    cached = _load_history()
-
-    if cached is not None and not cached.empty:
-        last_date = cached.index[-1]
-        today = pd.Timestamp.now().normalize()
-        if last_date >= today:
-            return cached
-        # 差分だけ取得
-        delta = _download_history(tickers_list, start=last_date.strftime("%Y-%m-%d"))
-        if delta is not None and not delta.empty:
-            combined = pd.concat([cached, delta])
-            combined = combined[~combined.index.duplicated(keep="last")]
-            combined.sort_index(inplace=True)
-            _save_history(combined)
-            return combined
-        return cached
-
-    # 初回: 5年分フル取得してファイルに保存
-    data = _download_history(tickers_list, period="5y")
-    if data is not None and not data.empty:
-        _save_history(data)
-    return data
-
-
-def _fetch_info_raw(ticker):
-    """個別銘柄のinfo取得（リトライ付き）"""
-    for attempt in range(3):
-        try:
-            return yf.Ticker(ticker).info
-        except Exception:
-            if attempt < 2:
-                time.sleep(3 * (attempt + 1))
-    return None
-
-
-def _init_info_cache():
-    """info.jsonを一度だけ読み込む"""
-    if "info_cache" not in st.session_state:
-        loaded = _load_info_cache()
-        st.session_state["info_cache"] = loaded.get("data", {})
-        st.session_state["info_dates"] = loaded.get("dates", {})
-
-
-def info_needs_fetch(ticker):
-    """このtickerのinfoをAPI取得する必要があるか"""
-    _init_info_cache()
-    today = datetime.now().strftime("%Y-%m-%d")
-    return not (ticker in st.session_state["info_cache"] and st.session_state["info_dates"].get(ticker) == today)
-
-
-def fetch_info(ticker):
-    """infoローカルキャッシュ（1日1回更新）"""
-    _init_info_cache()
-    today = datetime.now().strftime("%Y-%m-%d")
-    if ticker in st.session_state["info_cache"] and st.session_state["info_dates"].get(ticker) == today:
-        return st.session_state["info_cache"][ticker]
-
-    info = _fetch_info_raw(ticker)
-    if info:
-        st.session_state["info_cache"][ticker] = info
-        st.session_state["info_dates"][ticker] = today
-        _save_info_cache({"data": st.session_state["info_cache"], "dates": st.session_state["info_dates"]})
-    return info
-
-
-def fetch_data_from_bulk(bulk_data, ticker):
-    """一括データから個別銘柄を抽出し、infoと合わせて返す"""
+        prices = core.update_prices(tickers)
+    except Exception as e:
+        prices = core.load_prices()
+        warnings_.append(f"株価の更新に失敗したためキャッシュを表示しています ({type(e).__name__})")
     try:
-        if bulk_data is None:
-            return None, None
-        if ticker in bulk_data.columns.get_level_values(0):
-            hist = bulk_data[ticker].dropna(how="all")
-        else:
-            hist = bulk_data.dropna(how="all")
-        if hist.empty:
-            return None, None
-    except Exception:
-        return None, None
-
-    info = fetch_info(ticker)
-    if info is None:
-        return None, None
-
-    # 日本株: IRBankから予想EPSを取得（日本市場の標準PER = 予想ベース）
-    if ticker.endswith(".T"):
-        code = ticker.replace(".T", "")
-        irbank = fetch_irbank(code)
-        shares = info.get("sharesOutstanding")
-
-        if irbank.get("forecast_eps"):
-            info["trailingEps"] = irbank["forecast_eps"]
-        elif not info.get("trailingEps") and shares and shares > 0 and irbank.get("net_income"):
-            info["trailingEps"] = irbank["net_income"] / shares
-
-        if not info.get("bookValue") and shares and shares > 0 and irbank.get("net_assets"):
-            info["bookValue"] = irbank["net_assets"] / shares
-
-    return hist, info
+        fund, failed = core.update_fundamentals(tickers)
+        if failed:
+            warnings_.append("EPSの更新に失敗（前回値を使用）: " + ", ".join(failed))
+    except Exception as e:
+        fund = core.load_fundamentals()
+        warnings_.append(f"EPSの更新に失敗したためキャッシュを表示しています ({type(e).__name__})")
+    return prices, fund, warnings_
 
 
-def compute_valuation_series(hist, info):
-    df = hist[["Close"]].copy()
-    df.columns = ["price"]
+prices, fund, load_warnings = load_data()
+fx = fund.get("fx", {})
 
-    trailing_eps = info.get("trailingEps")
-    if trailing_eps and trailing_eps > 0:
-        df["pe"] = df["price"] / trailing_eps
-    else:
-        df["pe"] = np.nan
+# 時価総額（USD換算）順にカテゴリ内ソート
+def _mcap(t):
+    return core.usd_market_cap(fund["data"].get(t, {}), fx) or 0
 
-    return df
-
-
-def forecast_bb(series, days=FORECAST_DAYS):
-    """予測: 生値の最終点から接続。傾き=全期間回帰、バンド=日次σ×√t"""
-    clean = series.dropna()
-    if len(clean) < 30:
-        return None, None, None, None
-
-    # 全期間で回帰 → 傾き
-    X = np.arange(len(clean)).reshape(-1, 1)
-    y = clean.values
-    model = LinearRegression().fit(X, y)
-    slope = model.coef_[0]
-
-    # 日次リターンのσ（全期間）
-    daily_returns = clean.pct_change().dropna()
-    daily_sigma = daily_returns.std()
-
-    # 生値の最終点から開始（チャートの平均線と接続）
-    last_val = clean.iloc[-1]
-    last_date = clean.index[-1]
-
-    t = np.arange(0, days + 1)
-    future_center = last_val + slope * t
-    # 上側: 線形バンド（素直に広がる）
-    band = 2 * daily_sigma * last_val * np.sqrt(t)
-    future_upper = future_center + band
-    # 下側: 対数バンド（0に漸近、負にならない）
-    future_lower = future_center * np.exp(-2 * daily_sigma * np.sqrt(t))
-
-    future_dates = clean.index[-1:].append(
-        pd.bdate_range(start=last_date + timedelta(days=1), periods=days)
-    )
-    return future_dates, future_center, future_upper, future_lower
-
+ordered = sorted(TICKERS, key=lambda t: (ALL_CATEGORIES.index(TICKERS[t]["category"]), -_mcap(t)))
+colors = {}
+for cat in ALL_CATEGORIES:
+    shades = CATEGORY_SHADES[cat]
+    for i, t in enumerate([t for t in ordered if TICKERS[t]["category"] == cat]):
+        colors[t] = shades[i % len(shades)]
 
 # ─────────────────────────────────────────────
 # Header
 # ─────────────────────────────────────────────
+as_of = prices.index.max().strftime("%Y-%m-%d") if not prices.empty else "n/a"
 st.title("Consulting Valuation Monitor")
-st.caption(f"Global & Japan consulting sector  |  AI disruption tracking  |  {datetime.now().strftime('%Y-%m-%d')}")
+st.caption(f"Global & Japan consulting / IT services  |  AI disruption tracking  |  Data as of {as_of}")
+for w in load_warnings:
+    st.warning(w)
 
+# ─────────────────────────────────────────────
 # Sidebar
+# ─────────────────────────────────────────────
 st.sidebar.markdown("### PARAMETERS")
-metric_choice = "PER (株価収益率)"
-metric_key = "pe"
-
-period = st.sidebar.selectbox("PERIOD", ["1y", "2y", "3y", "5y"], index=1)
+period = st.sidebar.selectbox("PERIOD", list(PERIOD_DAYS), index=1)
+agg_label = st.sidebar.selectbox("CATEGORY AVERAGE", ["Median", "Mean"], index=0)
+agg_how = agg_label.lower()
+per_cap = st.sidebar.slider(
+    "PER CAP (outlier)", 50, 500, 200, step=25,
+    help="これを超えるPERは利益が極小の特殊期間とみなし、チャート・平均から除外",
+)
+log_scale = st.sidebar.checkbox("Log scale", value=True)
 show_forecast = st.sidebar.checkbox("Show forecast", value=True)
-forecast_days = st.sidebar.slider("Forecast days", 180, 360, 180)
+forecast_days = st.sidebar.slider("Forecast days", 180, 360, 180, step=30)
 
-selected_categories = ALL_CATEGORIES
-
-available_tickers = {
-    t: m for t, m in TICKERS.items() if m["category"] in selected_categories
-}
+if st.sidebar.button("Refresh data"):
+    load_data.clear()
+    st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### EXCLUDE")
-excluded_tickers = set()
-for t, m in available_tickers.items():
-    if st.sidebar.checkbox(m["name"], value=True, key=f"chk_{t}") is False:
-        excluded_tickers.add(t)
+st.sidebar.markdown("### TICKERS")
+active = []
+for cat in ALL_CATEGORIES:
+    with st.sidebar.expander(cat, expanded=False):
+        for t in [t for t in ordered if TICKERS[t]["category"] == cat]:
+            if st.checkbox(TICKERS[t]["name"], value=True, key=f"chk_{t}"):
+                active.append(t)
 
-active_tickers = {
-    t: m for t, m in available_tickers.items() if t not in excluded_tickers
+# ─────────────────────────────────────────────
+# PER series
+# ─────────────────────────────────────────────
+cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=PERIOD_DAYS[period])
+per_full = {}   # 全期間（KPIの前年比用）
+per_view = {}   # 表示期間
+no_data = []
+for t in active:
+    f = fund["data"].get(t)
+    if t not in prices.columns or not f:
+        no_data.append(TICKERS[t]["name"])
+        continue
+    s = core.per_series(prices[t], f.get("eps_points"), TICKERS[t].get("exclude_eps", ()))
+    s = s.where(s <= per_cap)
+    per_full[t] = s
+    per_view[t] = s[s.index >= cutoff]  # NaNは残す（除外期間を線でつながない）
+
+cat_full = {
+    cat: core.category_aggregate([per_full[t].dropna() for t in per_full if TICKERS[t]["category"] == cat], agg_how)
+    for cat in ALL_CATEGORIES
 }
+cat_view = {cat: s[s.index >= cutoff] for cat, s in cat_full.items()}
+
+# ─────────────────────────────────────────────
+# KPI row
+# ─────────────────────────────────────────────
+kpi_cols = st.columns(len(ALL_CATEGORIES))
+for col, cat in zip(kpi_cols, ALL_CATEGORIES):
+    s = cat_full[cat]
+    if s.empty:
+        col.metric(f"{cat} ({agg_label})", "n/a")
+        continue
+    now = s.iloc[-1]
+    prev = s[s.index <= s.index[-1] - pd.DateOffset(years=1)]
+    delta = f"{now - prev.iloc[-1]:+.1f}x vs 1y ago" if not prev.empty else None
+    n = sum(1 for t in per_full if TICKERS[t]["category"] == cat and not per_full[t].dropna().empty)
+    col.metric(f"{cat} ({agg_label} PER)", f"{now:.1f}x", delta, help=f"PERを算出できた {n} 銘柄の{agg_label}")
 
 # ─────────────────────────────────────────────
 # Main Chart
 # ─────────────────────────────────────────────
-progress_bar = st.progress(0, text="Fetching price data...")
-# 全銘柄の株価を一括ダウンロード（APIコール1回）
-all_ticker_list = list(active_tickers.keys())
-bulk_data = fetch_all_history(all_ticker_list)
-# 表示期間でフィルター（データは常に5y保持）
-period_days = {"1y": 365, "2y": 730, "3y": 1095, "5y": 1825}
-if bulk_data is not None:
-    cutoff = pd.Timestamp.now() - pd.Timedelta(days=period_days.get(period, 730))
-    bulk_data = bulk_data[bulk_data.index >= cutoff]
-progress_bar.progress(20, text="Fetching fundamentals...")
-
 fig = go.Figure()
 fig.update_layout(**MCK_LAYOUT)
-summary_rows = []
-alerts = []
-category_series = {cat: [] for cat in ALL_CATEGORIES}
-total = len(active_tickers)
-
-_init_info_cache()
-api_needed = any(info_needs_fetch(t) for t in active_tickers)
-fetch_count = 0
-
-for i, (ticker, meta) in enumerate(active_tickers.items()):
-    if api_needed and info_needs_fetch(ticker) and fetch_count > 0:
-        time.sleep(1)
-    pct = 20 + int(70 * (i + 1) / total)
-    progress_bar.progress(pct, text=f"Loading {meta['name']}... ({i+1}/{total})")
-    needs_api = info_needs_fetch(ticker)
-    hist, info = fetch_data_from_bulk(bulk_data, ticker)
-    if needs_api:
-        fetch_count += 1
-    if hist is None or info is None:
-        continue
-    df = compute_valuation_series(hist, info)
-    series = df[metric_key].dropna()
-    if series.empty:
-        continue
-
-    cat = meta["category"]
-    category_series[cat].append((series, ticker, meta))
 
 # --- Avg線を先に追加（凡例の先頭に表示） ---
 for cat in ALL_CATEGORIES:
-    if cat not in selected_categories or not category_series[cat]:
+    s = cat_view[cat]
+    if s.empty:
         continue
-
     avg_color = CATEGORY_AVG_COLORS[cat]
-    series_list = [s for s, _, _ in category_series[cat]]
-    combined = pd.concat(series_list, axis=1)
-    cat_mean = combined.mean(axis=1).dropna()
-    if cat_mean.empty:
-        continue
-
-    fill_color = f"rgba({int(avg_color[1:3],16)},{int(avg_color[3:5],16)},{int(avg_color[5:7],16)},0.12)"
-
     fig.add_trace(go.Scatter(
-        x=cat_mean.index, y=cat_mean.values,
+        x=s.index, y=s.values,
         mode="lines",
-        name=f"Avg: {cat}",
+        name=f"{agg_label}: {cat}",
         line=dict(color=avg_color, width=3.5),
-        opacity=1.0,
         legendgroup=cat,
         legendgrouptitle_text=cat,
-        hovertemplate=f"Avg: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+        hovertemplate=f"{agg_label}: {cat}<br>%{{x|%Y-%m-%d}}<br>PER: %{{y:.1f}}x<extra></extra>",
     ))
 
     if show_forecast:
-        fdates, f_sma, f_upper, f_lower = forecast_bb(cat_mean, forecast_days)
-        if fdates is not None:
+        fc = core.forecast_trend(s, forecast_days)
+        if fc is not None:
+            fdates, f_center, f_upper, f_lower = fc
             fig.add_trace(go.Scatter(
-                x=fdates, y=f_upper,
-                mode="lines", line=dict(width=0),
+                x=fdates, y=f_upper, mode="lines", line=dict(width=0),
                 legendgroup=cat, showlegend=False, hoverinfo="skip",
             ))
             fig.add_trace(go.Scatter(
-                x=fdates, y=f_lower,
-                mode="lines", line=dict(width=0),
-                fill="tonexty", fillcolor=fill_color,
+                x=fdates, y=f_lower, mode="lines", line=dict(width=0),
+                fill="tonexty", fillcolor=_rgba(avg_color, 0.12),
                 legendgroup=cat, showlegend=False, hoverinfo="skip",
             ))
             fig.add_trace(go.Scatter(
-                x=fdates, y=f_sma,
+                x=fdates, y=f_center,
                 mode="lines",
                 name=f"Forecast: {cat}",
                 line=dict(color=avg_color, width=2.5, dash="dot"),
                 opacity=0.8,
                 legendgroup=cat, showlegend=False,
-                hovertemplate=f"Forecast: {cat}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
+                hovertemplate=f"Forecast: {cat}<br>%{{x|%Y-%m-%d}}<br>PER: %{{y:.1f}}x<extra></extra>",
             ))
 
 # --- 個別銘柄を後に追加 ---
-for cat in ALL_CATEGORIES:
-    if cat not in selected_categories or not category_series[cat]:
+for t in ordered:
+    s = per_view.get(t)
+    if s is None or s.dropna().empty:
         continue
-    for series, ticker, meta in category_series[cat]:
-        fig.add_trace(go.Scatter(
-            x=series.index, y=series.values,
-            mode="lines",
-            name=meta["name"],
-            line=dict(color=meta["color"], width=1.2),
-            opacity=0.35,
-            legendgroup=cat,
-            hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>{metric_choice}: %{{y:.1f}}<extra></extra>",
-        ))
-
-        current_val = series.iloc[-1]
-        max_val = series.max()
-        min_val = series.min()
-        pct_from_peak = ((current_val - max_val) / max_val) * 100
-
-        summary_rows.append({
-            "銘柄": meta["name"],
-            "Ticker": ticker,
-            "カテゴリ": cat,
-            f"Current {metric_choice}": round(current_val, 2),
-            "Period High": round(max_val, 2),
-            "Period Low": round(min_val, 2),
-            "% from Peak": round(pct_from_peak, 1),
-        })
-
-        if pct_from_peak > -10:
-            alerts.append((meta["name"], pct_from_peak))
+    meta = TICKERS[t]
+    fig.add_trace(go.Scatter(
+        x=s.index, y=s.values,
+        mode="lines",
+        name=meta["name"],
+        line=dict(color=colors[t], width=1.2),
+        opacity=0.35,
+        legendgroup=meta["category"],
+        hovertemplate=f"{meta['name']}<br>%{{x|%Y-%m-%d}}<br>PER: %{{y:.1f}}x<extra></extra>",
+    ))
 
 fig.update_layout(
-    height=620,
-    title=dict(text=f"{metric_choice}  —  Daily trend with category averages"),
-    yaxis=dict(autorange=True, fixedrange=False, side="left"),
+    height=640,
+    title=dict(text=f"Trailing PER  —  Daily trend with category {agg_label.lower()}s"),
+    yaxis=dict(
+        type="log" if log_scale else "linear", title="PER (x)",
+        tickvals=[5, 10, 15, 20, 30, 50, 100, 200, 300, 500] if log_scale else None,
+    ),
     legend=dict(
         orientation="v", y=1, x=1.02,
         groupclick="togglegroup",
@@ -658,16 +419,83 @@ fig.update_layout(
     ),
     hovermode="x unified",
 )
-progress_bar.progress(100, text="Complete")
-progress_bar.empty()
-st.plotly_chart(fig, use_container_width=True, key="main_chart")
+st.plotly_chart(fig, width="stretch", key="main_chart")
 
 st.markdown(
     f'<div style="color:{MCK_TEXT}; font-size:0.72rem; line-height:1.6; margin-top:-0.5rem;">'
-    f'* Analysis period: {period} &ensp;|&ensp;'
-    f'Trend line: OLS linear regression over full period &ensp;|&ensp;'
-    f'Forecast band: ±2σ (daily return vol × √t), expanding cone from last data point'
+    f'* Trailing PER = 終値 ÷ 直近実績EPS（決算発表日以降に反映） &ensp;|&ensp; '
+    f'赤字期間・PER&gt;{per_cap}x は除外 &ensp;|&ensp; '
+    f'Forecast: 表示期間の対数PERトレンドを延長、帯は ±2σ（日次対数変化のσ × √t）。予測ではなく単純な外挿'
     f'</div>',
     unsafe_allow_html=True,
 )
+if no_data:
+    st.caption("データ取得不可: " + ", ".join(no_data))
 
+# ─────────────────────────────────────────────
+# Summary table
+# ─────────────────────────────────────────────
+st.markdown("### Snapshot")
+rows = []
+for t in ordered:
+    if t not in active or t not in per_full:
+        continue
+    meta, f = TICKERS[t], fund["data"][t]
+    price = prices[t].dropna()
+    raw_per = core.per_series(prices[t], f.get("eps_points"), meta.get("exclude_eps", ())).dropna()
+    view = per_view[t].dropna()
+    last_eps = (f.get("eps_points") or [[None, None]])[-1][1]
+    fwd = f.get("forward_eps")
+    cur_per = raw_per.iloc[-1] if not raw_per.empty and raw_per.index[-1] == price.index[-1] else np.nan
+    pct_rank = (view <= view.iloc[-1]).mean() * 100 if not view.empty and not np.isnan(cur_per) else np.nan
+    rows.append({
+        "銘柄": meta["name"],
+        "Ticker": t,
+        "カテゴリ": meta["category"],
+        "時価総額 ($bn)": (_mcap(t) or np.nan) / 1e9,
+        "実績PER": cur_per,
+        "予想PER": price.iloc[-1] / fwd if fwd and fwd > 0 else np.nan,
+        "期間高値": view.max() if not view.empty else np.nan,
+        "期間安値": view.min() if not view.empty else np.nan,
+        "高値比 (%)": (cur_per / view.max() - 1) * 100 if not view.empty and not np.isnan(cur_per) else np.nan,
+        "期間内位置 (%)": pct_rank,
+        "状態": ("赤字" if last_eps is not None and last_eps <= 0
+                 else "一過性要因で除外" if (f.get("eps_points") or [[None]])[-1][0] in meta.get("exclude_eps", ())
+                 else "PER上限超" if cur_per > per_cap else ""),
+    })
+summary = pd.DataFrame(rows)
+if not summary.empty:
+    st.dataframe(
+        summary,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "時価総額 ($bn)": st.column_config.NumberColumn(format="%.1f"),
+            "実績PER": st.column_config.NumberColumn(format="%.1fx"),
+            "予想PER": st.column_config.NumberColumn(format="%.1fx", help="会社予想（日本株: IRBank）/ アナリスト予想（その他: Yahoo）"),
+            "期間高値": st.column_config.NumberColumn(format="%.1fx"),
+            "期間安値": st.column_config.NumberColumn(format="%.1fx"),
+            "高値比 (%)": st.column_config.NumberColumn(format="%.1f"),
+            "期間内位置 (%)": st.column_config.ProgressColumn(
+                min_value=0, max_value=100, format="%.0f",
+                help="表示期間のPER分布における現在値の位置（100=期間最高）"),
+        },
+    )
+    near_high = summary[summary["高値比 (%)"] > -10]["銘柄"].tolist()
+    near_low = summary[summary["期間内位置 (%)"] <= 10]["銘柄"].tolist()
+    if near_high:
+        st.info("期間高値から10%以内: " + ", ".join(near_high))
+    if near_low:
+        st.info("期間内で下位10%の水準: " + ", ".join(near_low))
+
+with st.expander("Methodology & data sources"):
+    st.markdown(
+        f"""
+- **株価**: Yahoo Finance 終値（分割調整済み・配当未調整）。過去{core.HISTORY_YEARS}年分を `data/prices.parquet` にキャッシュし、差分のみ更新。
+- **EPS（米国・グローバル）**: Yahoo Finance の四半期 Reported EPS を直近4四半期で合算（TTM）し、決算発表日から反映。Capgemini は年次 Diluted EPS（期末+{core.ANNUAL_DISCLOSURE_LAG_DAYS}日から反映）。
+- **EPS（日本株）**: IRBank の通期実績EPS。決算期末+{core.JP_DISCLOSURE_LAG_DAYS}日（決算短信の想定時期）から反映するため、年1回の階段状になります。
+- **予想PER**: 日本株は IRBank の会社予想EPS、その他は Yahoo の forwardEps。
+- **カテゴリ平均**: 各日で算出可能な銘柄の{agg_label}。上場・黒字化で構成銘柄が変わると不連続になり得ます。
+- EPSは週1回、株価は6時間ごとに自動更新。`python scripts/update_data.py` で手動更新できます。
+"""
+    )
